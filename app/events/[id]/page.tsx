@@ -6,7 +6,7 @@ import { EditorOnly } from "@/components/editor-only";
 import { StatusBadge } from "@/components/status-badge";
 import { prisma } from "@/lib/prisma";
 import { createEventSlot, createOperationTask } from "@/lib/actions";
-import { dateUa, eventStatusLabels, money, operationStatusLabels } from "@/lib/format";
+import { dateUa, deadlineStateFor, deadlineStateLabels, eventStatusLabels, money, operationStatusLabels } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -46,8 +46,8 @@ export default async function EventDetailPage({ params, searchParams }: { params
   const pipeline = event.deals.filter((deal) => ["lead", "proposal"].includes(deal.status)).reduce((sum, deal) => sum + Number(deal.factAmount || deal.amount), 0);
   const paid = event.deals.reduce((sum, deal) => sum + Number(deal.paidAmount || 0), 0);
   const debt = Math.max(confirmed + pipeline - paid, 0);
-  const overdueTasks = event.tasks.filter((task) => task.deadlineState === "overdue").length;
-  const todayTasks = event.tasks.filter((task) => task.deadlineState === "today").length;
+  const overdueTasks = event.tasks.filter((task) => deadlineStateFor(task.deadline, task.status) === "overdue").length;
+  const todayTasks = event.tasks.filter((task) => deadlineStateFor(task.deadline, task.status) === "today").length;
   const waitingClientTasks = event.tasks.filter((task) => task.status === "waiting_client").length;
   const missingInputs = partnerSlots.filter((slot) => slot.missingInputs).length;
 
@@ -201,7 +201,7 @@ function Tasks({ event }: any) {
           task.group ?? "—",
           task.title,
           task.deadline ? dateUa(task.deadline) : "—",
-          task.deadlineState,
+          deadlineStateLabels[deadlineStateFor(task.deadline, task.status)],
           task.status,
           task.ownerRole ?? task.assignee ?? "—",
           task.nextStep ?? "—",

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
-import { dateUa, money, operationStatusLabels, paymentStatusLabels } from "@/lib/format";
+import { dateUa, deadlineStateFor, deadlineStateLabels, money, operationStatusLabels, paymentStatusLabels } from "@/lib/format";
 import { prisma } from "@/lib/prisma";
 
 const tabs = [
@@ -80,7 +80,7 @@ export async function WorkspaceView({ type }: { type: "sales" | "project" | "doc
           task.process,
           task.title,
           task.deadline ? dateUa(task.deadline) : "—",
-          task.deadlineState,
+          deadlineStateLabels[deadlineStateFor(task.deadline, task.status)],
           operationStatusLabels[task.status] ?? task.status,
           task.ownerRole ?? task.assignee ?? "—",
           task.nextStep ?? "—"
@@ -90,12 +90,18 @@ export async function WorkspaceView({ type }: { type: "sales" | "project" | "doc
   );
 }
 
+const ACTIVE_TASK = { status: { notIn: ["ready"] } };
+
 function taskWhere(type: string) {
-  if (type === "project") return { process: "project", status: { notIn: ["done", "cancelled"] } };
-  if (type === "docs") return { process: "docs", status: { notIn: ["done", "cancelled"] } };
-  if (type === "reports") return { process: "reports", status: { notIn: ["done", "cancelled"] } };
-  if (type === "sales") return { process: "sales", status: { notIn: ["done", "cancelled"] } };
-  if (type === "deadlines") return { deadlineState: { in: ["overdue", "today", "soon"] }, status: { notIn: ["done", "cancelled"] } };
+  if (type === "project") return { process: "project", ...ACTIVE_TASK };
+  if (type === "docs") return { process: "docs", ...ACTIVE_TASK };
+  if (type === "reports") return { process: "reports", ...ACTIVE_TASK };
+  if (type === "sales") return { process: "sales", ...ACTIVE_TASK };
+  if (type === "deadlines") {
+    const soonLimit = new Date();
+    soonLimit.setDate(soonLimit.getDate() + 7);
+    return { deadline: { lte: soonLimit }, ...ACTIVE_TASK };
+  }
   return {};
 }
 

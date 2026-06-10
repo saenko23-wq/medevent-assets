@@ -59,6 +59,39 @@ function parseDate(value, fallbackYear = 2026) {
   return new Date(Date.UTC(year, month - 1, day));
 }
 
+function normalizeEventKey(value) {
+  return cellText(value)
+    .replace(/🎓/g, "")
+    .replace(/_/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+function eventKeyAliases(value) {
+  const key = normalizeEventKey(value);
+  if (!key) return [];
+  const aliases = new Set([key]);
+  aliases.add(key.replace(/^(\d{1,2})-\d{1,2}\./, "$1."));
+  return [...aliases];
+}
+
+function registerEventAliases(eventMap, event, ...names) {
+  for (const name of names) {
+    for (const alias of eventKeyAliases(name)) {
+      if (!eventMap.has(alias)) eventMap.set(alias, event);
+    }
+  }
+}
+
+function resolveEvent(eventMap, source) {
+  for (const alias of eventKeyAliases(source)) {
+    const hit = eventMap.get(alias);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function rowsOf(workbook, sheetName) {
   const sheet = workbook.Sheets[sheetName];
   return XLSX.utils.sheet_to_json(sheet, { header: 1, defval: null, raw: true, cellDates: true });
@@ -289,7 +322,7 @@ async function importEventSheets(workbook) {
         status: eventStatusFromDates(startDate, endDate)
       }
     });
-    eventMap.set(sheetName.trim().replace(/^🎓\s*/, ""), event);
+    registerEventAliases(eventMap, event, sheetName, info[0], title);
 
     for (let r = 4; r < rows.length; r += 1) {
       const row = rows[r] || [];
@@ -370,7 +403,7 @@ async function importPlanClients(workbook) {
   }
 }
 
-async function importPayments(workbook) {
+async function importPayments(workbook, eventMap) {
   const rows = rowsOf(workbook, "Оплати_Комісії");
   for (let r = 2; r < rows.length; r += 1) {
     const row = rows[r] || [];
@@ -379,14 +412,7 @@ async function importPayments(workbook) {
     const amount = money(row[9]);
     if (!company || !eventSource || !amount) continue;
     const client = await getOrCreateClient(company, "", cellText(row[4]), cellText(row[6]));
-    let event = await prisma.event.findFirst({
-      where: {
-        OR: [
-          { title: { contains: eventSource, mode: "insensitive" } },
-          { eventCode: { contains: eventSource, mode: "insensitive" } }
-        ]
-      }
-    });
+    let event = resolveEvent(eventMap, eventSource);
     if (!event) {
       const date = parseDate(row[1]) || new Date(Date.UTC(2026, 0, 1));
       event = await prisma.event.create({
@@ -401,6 +427,7 @@ async function importPayments(workbook) {
           status: eventStatusFromDates(date, date)
         }
       });
+      registerEventAliases(eventMap, event, eventSource);
     }
     const statusText = cellText(row[15]).toLowerCase();
     const paymentStatus = statusText.includes("оплач") ? "paid" : statusText.includes("прост") ? "overdue" : "waiting";
@@ -443,7 +470,7 @@ function opStatus(value) {
   return "not_started";
 }
 
-async function importDeadlines(workbook) {
+async function importDeadlines(workbook, eventMap) {
   const rows = rowsOf(workbook, "Дедлайн звітів");
   const taskDefs = [
     { type: "doclink", title: "DocLink", deadline: null, assignee: 18, status: 17, link: 16 },
@@ -459,7 +486,7 @@ async function importDeadlines(workbook) {
     const row = rows[r] || [];
     const eventName = cellText(row[2]);
     if (!eventName) continue;
-    let event = await prisma.event.findFirst({ where: { title: { contains: eventName, mode: "insensitive" } } });
+    let event = resolveEvent(eventMap, eventName);
     if (!event) {
       const date = parseDate(row[1]) || new Date(Date.UTC(2026, 0, 1));
       event = await prisma.event.create({
@@ -474,6 +501,7 @@ async function importDeadlines(workbook) {
           status: eventStatusFromDates(date, date)
         }
       });
+      registerEventAliases(eventMap, event, eventName);
     }
     for (const def of taskDefs) {
       const hasAny = [def.deadline, def.factDate, def.assignee, def.status, def.link]
@@ -507,9 +535,9 @@ async function main() {
   await importReferences(workbook);
   await importPackages(workbook);
   await importPlanClients(workbook);
-  await importEventSheets(workbook);
-  await importPayments(workbook);
-  await importDeadlines(workbook);
+  const eventMap = await importEventSheets(workbook);
+  await importPayments(workbook, eventMap);
+  await importDeadlines(workbook, eventMap);
 
   const counts = {
     importedSheets: await prisma.$queryRawUnsafe(`select count(*)::int as count from "ImportedSheet"`),

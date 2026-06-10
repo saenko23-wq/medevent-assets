@@ -37,11 +37,11 @@ export function LoginForm() {
     <form onSubmit={onSubmit} className="space-y-4">
       <div className="space-y-1.5">
         <label htmlFor="email">Email</label>
-        <input id="email" name="email" type="email" defaultValue="admin@medevent.local" required />
+        <input id="email" name="email" type="email" autoComplete="email" required />
       </div>
       <div className="space-y-1.5">
         <label htmlFor="password">Пароль</label>
-        <input id="password" name="password" type="password" defaultValue="medevent2026" required />
+        <input id="password" name="password" type="password" autoComplete="current-password" required />
       </div>
       {error ? <p className="text-sm text-red-600">{error}</p> : null}
       <button
