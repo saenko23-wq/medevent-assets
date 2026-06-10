@@ -113,7 +113,11 @@ model Event {
   startDate      DateTime
   endDate        DateTime
   format         String
+  deliveryFormat String        @default("ONLINE")
   formatDetails  String?
+  therapeuticDirection String?
+  bprPoints      Int?
+  projectManager String?
   talkCount      Int            @default(0)
   nonPharmaCount Int            @default(0)
   slotPrice      String?
@@ -171,6 +175,7 @@ model EventSlot {
   eventId                  String
   rowNumber                Int?
   rowType                  String
+  rowTypeNormalized        String   @default("PARTNER")
   clientId                 String?
   productManager           String?
   manager                  String?
@@ -180,7 +185,9 @@ model EventSlot {
   crmSource                String?
   speakerId                String?
   speakerName              String?
+  moderatorName            String?
   participationFormat      String?
+  speakerParticipationMode String?
   contact                  String?
   speakerHonorarium        Decimal?
   honorariumPayer          String?
@@ -196,6 +203,8 @@ model EventSlot {
   programComment           String?
   managerComment           String?
   technicalKey             String?
+  missingInputs            String?
+  crmUrl                   String?
   tasks                    OperationTask[]
   event                    Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   client                   Client?  @relation(fields: [clientId], references: [id], onDelete: SetNull)
@@ -209,14 +218,25 @@ model OperationTask {
   eventId     String
   slotId      String?
   type        String
+  process     String          @default("project")
+  group       String?
   title       String
+  description String?
   deadline    DateTime?
+  deadlineState String        @default("no_date")
   factDate    DateTime?
   assignee    String?
   status      String @default("not_started")
+  ownerRole   String?
+  executorUserId String?
+  controllerUserId String?
   link        String?
   blocker     String?
+  nextStep    String?
   comment     String?
+  manualMode  Boolean         @default(false)
+  source      String          @default("manual")
+  packageCode String?
   nextOwner   String?
   event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   slot        EventSlot?      @relation(fields: [slotId], references: [id], onDelete: SetNull)
@@ -266,6 +286,7 @@ model ParticipationPackage {
   duration    String
   description String?
   features    PackageFeature[]
+  serviceTemplates PackageServiceTemplate[]
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt
 }
@@ -279,6 +300,24 @@ model PackageFeature {
   createdAt DateTime             @default(now())
 
   @@unique([packageId, name])
+}
+
+model PackageServiceTemplate {
+  id               String   @id @default(cuid())
+  packageId        String
+  packageCode      String
+  serviceCode      String
+  title            String
+  process          String
+  defaultOwnerRole String
+  requiredInputs   String?
+  deadlineRule     String?
+  autoDoneCondition String?
+  isRequired       Boolean  @default(true)
+  package          ParticipationPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  createdAt        DateTime @default(now())
+
+  @@unique([packageCode, serviceCode])
 }
 
 model Report {

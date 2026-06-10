@@ -5,6 +5,7 @@ import {
   BarChart3,
   CalendarDays,
   CalendarRange,
+  ClipboardList,
   FileText,
   Handshake,
   LayoutDashboard,
@@ -21,6 +22,7 @@ import { SignOutButton } from "@/components/sign-out-button";
 const items = [
   { href: "/dashboard", label: "Дашборд", icon: LayoutDashboard },
   { href: "/calendar", label: "Календар", icon: CalendarRange },
+  { href: "/workspace/deadlines", label: "Задачі", icon: ClipboardList },
   { href: "/clients", label: "Клієнти", icon: UsersRound },
   { href: "/speakers", label: "Спікери", icon: Mic2 },
   { href: "/events", label: "Заходи", icon: CalendarDays },

@@ -34,6 +34,19 @@ function boolUa(value) {
   return ["так", "true", "1", "готово", "🟢 готово"].includes(text);
 }
 
+function normalizeRowType(value) {
+  const text = cellText(value).toLowerCase();
+  return text.includes("без фарм") || text.includes("medevent_program") ? "MEDEVENT_PROGRAM" : "PARTNER";
+}
+
+function normalizeSpeakerMode(value) {
+  const text = cellText(value).toLowerCase();
+  if (text.includes("запис")) return "RECORDED";
+  if (text.includes("студ")) return "STUDIO_RECORDING";
+  if (text.includes("оф")) return "LIVE_OFFLINE";
+  return "LIVE_ONLINE";
+}
+
 function parseDate(value, fallbackYear = 2026) {
   if (!value) return null;
   if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
@@ -260,6 +273,7 @@ async function importEventSheets(workbook) {
         startDate,
         endDate,
         format: cellText(info[3])?.toLowerCase().includes("оф") ? "offline" : "online",
+        deliveryFormat: cellText(info[3])?.toLowerCase().includes("оф") || cellText(info[3])?.toLowerCase().includes("гібр") ? "OFFLINE_HYBRID" : "ONLINE",
         formatDetails: cellText(info[3]),
         talkCount: Number(cellText(info[4])) || 0,
         nonPharmaCount: Number(cellText(info[5])) || 0,
@@ -301,6 +315,7 @@ async function importEventSheets(workbook) {
           eventId: event.id,
           rowNumber,
           rowType: rowType || "Партнер",
+          rowTypeNormalized: normalizeRowType(rowType),
           clientId: client?.id || null,
           productManager: cellText(row[3]) || null,
           manager: cellText(row[4]) || null,
@@ -311,6 +326,7 @@ async function importEventSheets(workbook) {
           speakerId: speaker?.id || null,
           speakerName: speakerName || null,
           participationFormat: cellText(row[10]) || null,
+          speakerParticipationMode: normalizeSpeakerMode(row[17]),
           contact: cellText(row[11]) || null,
           speakerHonorarium: money(row[12]),
           honorariumPayer: cellText(row[13]) || null,
@@ -325,6 +341,14 @@ async function importEventSheets(workbook) {
           reportSent: boolUa(row[22]),
           programComment: cellText(row[23]) || null,
           managerComment: cellText(row[24]) || null,
+          missingInputs: normalizeRowType(rowType) === "PARTNER" ? [
+            ["company", company],
+            ["product_manager", cellText(row[3])],
+            ["speaker", speakerName],
+            ["topic", talkTitle],
+            ["drug_or_brand", cellText(row[16])],
+            ["speaker_participation_mode", cellText(row[17])]
+          ].filter(([, value]) => !value).map(([key]) => key).join(",") || null : null,
           technicalKey: `${slug(sheetName)}|${r + 1}|${slug(company)}|${slug(speakerName)}`
         }
       });

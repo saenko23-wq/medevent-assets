@@ -106,6 +106,7 @@ async function main() {
         startDate: date,
         endDate: date,
         format: "online",
+        deliveryFormat: "ONLINE",
         plannedBudget: 0,
         actualBudget: 0,
         status: eventStatusFromDates(date, date)

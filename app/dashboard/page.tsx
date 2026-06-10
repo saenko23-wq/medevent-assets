@@ -56,9 +56,10 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
     prisma.event.findMany({ orderBy: { startDate: "asc" } })
   ]);
 
-  const filteredDeals = allDeals.filter((deal) => matchesFilters(deal, filters));
+  const commercialDealIds = await commercialDealsForDashboard();
+  const filteredDeals = allDeals.filter((deal) => commercialDealIds.has(deal.id) && matchesFilters(deal, filters));
   const source = buildRows(filteredDeals);
-  const allRows = buildRows(allDeals);
+  const allRows = buildRows(allDeals.filter((deal) => commercialDealIds.has(deal.id)));
 
   const plan = sum(source, "plan");
   const fact = sum(source, "fact");
@@ -187,6 +188,29 @@ export default async function DashboardPage({ searchParams }: { searchParams: Se
       </section>
     </AppShell>
   );
+}
+
+async function commercialDealsForDashboard() {
+  const deals = await prisma.deal.findMany({
+    include: {
+      client: true,
+      event: {
+        include: {
+          slots: true
+        }
+      }
+    }
+  });
+  const ids = new Set<string>();
+  for (const deal of deals) {
+    const matchingInternal = deal.event.slots.some((slot) =>
+      slot.rowTypeNormalized === "MEDEVENT_PROGRAM" &&
+      slot.clientId === deal.clientId &&
+      slot.package === deal.package
+    );
+    if (!matchingInternal) ids.add(deal.id);
+  }
+  return ids;
 }
 
 function normalizeFilters(searchParams: SearchParams) {

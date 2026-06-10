@@ -19,6 +19,45 @@ function decimalFrom(formData: FormData, key: string) {
   return Number(formData.get(key) || 0);
 }
 
+function normalizePackageCode(value: string) {
+  const text = value.toUpperCase();
+  if (text.includes("PLUS")) return "PLUS";
+  if (text.includes("MONO")) return "MONO";
+  if (text.includes("COMBO")) return "COMBO";
+  if (text.includes("STANDART") || text.includes("STANDARD")) return "STANDART";
+  return text;
+}
+
+function normalizeRowType(value: string) {
+  return value.toLowerCase().includes("без фарм") || value === "MEDEVENT_PROGRAM" ? "MEDEVENT_PROGRAM" : "PARTNER";
+}
+
+async function createPackageTasks(eventId: string, slotId: string, packageCode: string) {
+  const templates = await prisma.packageServiceTemplate.findMany({ where: { packageCode } });
+  const deadline = new Date();
+  deadline.setDate(deadline.getDate() + 7);
+  if (!templates.length) return;
+
+  await prisma.operationTask.createMany({
+    data: templates.map((template) => ({
+      eventId,
+      slotId,
+      type: "custom",
+      process: template.process,
+      group: "Package tasks",
+      title: template.title,
+      description: template.requiredInputs ? `Required inputs: ${template.requiredInputs}` : null,
+      deadline,
+      deadlineState: "soon",
+      status: "not_started",
+      ownerRole: template.defaultOwnerRole,
+      source: "auto_package",
+      packageCode
+    })),
+    skipDuplicates: true
+  });
+}
+
 export async function createClient(formData: FormData) {
   await requireEditor();
   await prisma.client.create({
@@ -104,19 +143,34 @@ export async function createEventSlot(formData: FormData) {
   await requireEditor();
   const eventId = String(formData.get("eventId"));
   const clientId = String(formData.get("clientId") || "");
-  await prisma.eventSlot.create({
+  const rowType = String(formData.get("rowType"));
+  const rowTypeNormalized = normalizeRowType(rowType);
+  const packageName = String(formData.get("package") || "Standart");
+  const packageCode = normalizePackageCode(packageName);
+  const missingInputs = [
+    ["company", clientId],
+    ["product_manager", String(formData.get("productManager") || "")],
+    ["speaker", String(formData.get("speakerName") || "")],
+    ["topic", String(formData.get("talkTitle") || "")],
+    ["drug_or_brand", String(formData.get("brandTopic") || "")],
+    ["speaker_participation_mode", String(formData.get("studioRecord") || "")]
+  ].filter(([, value]) => !value).map(([key]) => key);
+
+  const slot = await prisma.eventSlot.create({
     data: {
       eventId,
-      rowType: String(formData.get("rowType")),
+      rowType,
+      rowTypeNormalized,
       clientId: clientId || null,
       productManager: String(formData.get("productManager") || ""),
       manager: String(formData.get("manager") || ""),
       salesStatus: String(formData.get("salesStatus") || "Лід"),
-      package: String(formData.get("package") || "Standart"),
+      package: packageName,
       price: parseMoney(formData.get("price")),
       crmSource: String(formData.get("crmSource") || "CRM"),
       speakerName: String(formData.get("speakerName") || ""),
       participationFormat: String(formData.get("participationFormat") || ""),
+      speakerParticipationMode: String(formData.get("speakerParticipationMode") || ""),
       contact: String(formData.get("contact") || ""),
       speakerHonorarium: parseMoney(formData.get("speakerHonorarium")),
       honorariumPayer: String(formData.get("honorariumPayer") || ""),
@@ -127,9 +181,13 @@ export async function createEventSlot(formData: FormData) {
       duration: String(formData.get("duration") || ""),
       direction: String(formData.get("direction") || ""),
       programComment: String(formData.get("programComment") || ""),
-      managerComment: String(formData.get("managerComment") || "")
+      managerComment: String(formData.get("managerComment") || ""),
+      missingInputs: missingInputs.length ? missingInputs.join(",") : null
     }
   });
+  if (rowTypeNormalized === "PARTNER") {
+    await createPackageTasks(eventId, slot.id, packageCode);
+  }
   revalidatePath(`/events/${eventId}`);
   redirect(`/events/${eventId}`);
 }
