@@ -161,19 +161,59 @@ export async function createOperationTask(formData: FormData) {
 
 export async function createDeal(formData: FormData) {
   await requireEditor();
+  const amount = decimalFrom(formData, "amount");
+  const paymentDeadline = String(formData.get("paymentDeadline") || "");
+  const reportDeadline = String(formData.get("reportDeadline") || "");
   await prisma.deal.create({
     data: {
       clientId: String(formData.get("clientId")),
       eventId: String(formData.get("eventId")),
       package: String(formData.get("package")) as "Standart" | "Plus" | "Mono" | "Combo",
-      amount: decimalFrom(formData, "amount"),
+      amount,
+      planAmount: decimalFrom(formData, "planAmount") || amount,
+      factAmount: decimalFrom(formData, "factAmount") || amount,
+      paidAmount: decimalFrom(formData, "paidAmount"),
+      productManager: String(formData.get("productManager") || ""),
+      manager: String(formData.get("manager") || ""),
       status: String(formData.get("status")) as "lead" | "proposal" | "won" | "lost",
-      paymentStatus: String(formData.get("paymentStatus")) as "paid" | "waiting" | "overdue" | "can_request"
+      paymentStatus: String(formData.get("paymentStatus")) as "paid" | "waiting" | "overdue" | "can_request",
+      paymentDeadline: paymentDeadline ? new Date(paymentDeadline) : null,
+      reportDeadline: reportDeadline ? new Date(reportDeadline) : null,
+      comment: String(formData.get("comment") || "")
     }
   });
   revalidatePath("/deals");
   revalidatePath("/dashboard");
   redirect("/deals");
+}
+
+export async function updateDealFromDashboard(formData: FormData) {
+  await requireEditor();
+  const id = String(formData.get("id"));
+  const paymentDeadline = String(formData.get("paymentDeadline") || "");
+  const reportDeadline = String(formData.get("reportDeadline") || "");
+  await prisma.deal.update({
+    where: { id },
+    data: {
+      clientId: String(formData.get("clientId")),
+      eventId: String(formData.get("eventId")),
+      package: String(formData.get("package") || "Індивідуально"),
+      amount: decimalFrom(formData, "factAmount"),
+      planAmount: decimalFrom(formData, "planAmount"),
+      factAmount: decimalFrom(formData, "factAmount"),
+      paidAmount: decimalFrom(formData, "paidAmount"),
+      productManager: String(formData.get("productManager") || ""),
+      manager: String(formData.get("manager") || ""),
+      status: String(formData.get("status")),
+      paymentStatus: String(formData.get("paymentStatus")),
+      paymentDeadline: paymentDeadline ? new Date(paymentDeadline) : null,
+      reportDeadline: reportDeadline ? new Date(reportDeadline) : null,
+      comment: String(formData.get("comment") || ""),
+      archived: formData.get("archived") === "on"
+    }
+  });
+  revalidatePath("/dashboard");
+  revalidatePath("/deals");
 }
 
 export async function createReport(formData: FormData) {

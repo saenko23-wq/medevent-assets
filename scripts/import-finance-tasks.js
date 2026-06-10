@@ -135,8 +135,16 @@ async function main() {
       eventId: event.id,
       package: cellText(row[5]) || "Індивідуально",
       amount,
+      planAmount: amount,
+      factAmount: amount,
+      paidAmount: paymentStatus === "paid" ? amount : 0,
+      productManager: cellText(row[4]) || null,
+      manager: cellText(row[6]) || null,
       status: cellText(row[8]).includes("100") ? "won" : "proposal",
-      paymentStatus
+      paymentStatus,
+      paymentDeadline: parseDate(row[13]) || null,
+      reportDeadline: parseDate(row[11]) || null,
+      comment: cellText(row[20]) || null
     });
     payments.push({
       id: `payment_${r + 1}_${slug(eventSource)}_${slug(company)}_${amount}`,
