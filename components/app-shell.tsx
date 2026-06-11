@@ -12,6 +12,7 @@ import {
   LogOut,
   Mic2,
   Package,
+  ShieldCheck,
   SlidersHorizontal,
   UsersRound
 } from "lucide-react";
@@ -30,7 +31,8 @@ const items = [
   { href: "/reports", label: "Звіти", icon: FileText },
   { href: "/payments", label: "Оплати", icon: BadgeDollarSign },
   { href: "/packages", label: "Пакети", icon: Package },
-  { href: "/references", label: "Довідники", icon: SlidersHorizontal }
+  { href: "/references", label: "Довідники", icon: SlidersHorizontal },
+  { href: "/settings/data-quality", label: "Data Quality", icon: ShieldCheck }
 ];
 
 export async function AppShell({ children }: { children: React.ReactNode }) {

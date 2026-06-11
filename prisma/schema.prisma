@@ -130,8 +130,11 @@ model Event {
   slots          EventSlot[]
   tasks          OperationTask[]
   documents      EventDocument[]
+  documentWorkflows DocumentWorkflow[]
+  fileAttachments FileAttachment[]
   deals          Deal[]
   reports        Report[]
+  activityLogs   ActivityLog[]
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
 }
@@ -166,6 +169,7 @@ model Deal {
   client        Client      @relation(fields: [clientId], references: [id], onDelete: Cascade)
   event         Event       @relation(fields: [eventId], references: [id], onDelete: Cascade)
   payments      Payment[]
+  documentWorkflows DocumentWorkflow[]
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 }
@@ -240,8 +244,27 @@ model OperationTask {
   nextOwner   String?
   event       Event           @relation(fields: [eventId], references: [id], onDelete: Cascade)
   slot        EventSlot?      @relation(fields: [slotId], references: [id], onDelete: SetNull)
+  fileAttachments FileAttachment[]
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
+}
+
+model DocumentWorkflow {
+  id             String   @id @default(cuid())
+  eventId        String
+  dealId         String?
+  documentType   String
+  status         String   @default("NOT_STARTED")
+  sentAt         DateTime?
+  deadlineAt     DateTime?
+  owner          String?
+  fileUrl        String?
+  comment        String?
+  event          Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  deal           Deal?    @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  fileAttachments FileAttachment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 }
 
 model EventDocument {
@@ -255,6 +278,37 @@ model EventDocument {
   event     Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model FileAttachment {
+  id                 String            @id @default(cuid())
+  eventId            String
+  dealId             String?
+  taskId             String?
+  documentWorkflowId String?
+  reportId           String?
+  fileName           String
+  fileUrl            String
+  fileType           String?
+  uploadedBy         String?
+  event              Event             @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  task               OperationTask?    @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  documentWorkflow   DocumentWorkflow? @relation(fields: [documentWorkflowId], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+}
+
+model ActivityLog {
+  id         String   @id @default(cuid())
+  eventId    String?
+  entityType String
+  entityId   String
+  userId     String?
+  action     String
+  before     Json?
+  after      Json?
+  comment    String?
+  event      Event?   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
 }
 
 model ReferenceCategory {

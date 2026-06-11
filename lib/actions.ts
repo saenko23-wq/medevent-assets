@@ -9,14 +9,20 @@ import { parseMoney } from "@/lib/format";
 
 async function requireEditor() {
   const session = await getServerSession(authOptions);
-  const role = session?.user.role;
-  if (!role || !["admin", "manager", "operations"].includes(role)) {
+  const role = session?.user.role?.toLowerCase();
+  if (!role || !["admin", "manager", "operations", "head_of_sales", "sales_manager", "project_manager", "docs_manager", "finance_manager", "reports_manager"].includes(role)) {
     throw new Error("Недостатньо прав для зміни даних.");
   }
+  return session!;
 }
 
 function decimalFrom(formData: FormData, key: string) {
   return Number(formData.get(key) || 0);
+}
+
+function nullableDate(formData: FormData, key: string) {
+  const value = String(formData.get(key) || "");
+  return value ? new Date(value) : null;
 }
 
 function normalizePackageCode(value: string) {
@@ -246,11 +252,12 @@ export async function createDeal(formData: FormData) {
 }
 
 export async function updateDealFromDashboard(formData: FormData) {
-  await requireEditor();
+  const session = await requireEditor();
   const id = String(formData.get("id"));
   const paymentDeadline = String(formData.get("paymentDeadline") || "");
   const reportDeadline = String(formData.get("reportDeadline") || "");
-  await prisma.deal.update({
+  const before = await prisma.deal.findUnique({ where: { id } });
+  const updated = await prisma.deal.update({
     where: { id },
     data: {
       clientId: String(formData.get("clientId")),
@@ -270,8 +277,20 @@ export async function updateDealFromDashboard(formData: FormData) {
       archived: formData.get("archived") === "on"
     }
   });
+  await prisma.activityLog.create({
+    data: {
+      eventId: updated.eventId,
+      entityType: "PAYMENT",
+      entityId: updated.id,
+      userId: session.user.id,
+      action: "update_deal",
+      before: before as any,
+      after: updated as any
+    }
+  });
   revalidatePath("/dashboard");
   revalidatePath("/deals");
+  revalidatePath(`/events/${updated.eventId}`);
 }
 
 export async function createReport(formData: FormData) {
@@ -305,4 +324,118 @@ export async function createPayment(formData: FormData) {
   revalidatePath("/payments");
   revalidatePath("/dashboard");
   redirect("/payments");
+}
+
+export async function updateOperationTask(formData: FormData) {
+  const session = await requireEditor();
+  const id = String(formData.get("id"));
+  const before = await prisma.operationTask.findUnique({ where: { id } });
+  if (!before) throw new Error("Task not found");
+
+  const updated = await prisma.operationTask.update({
+    where: { id },
+    data: {
+      status: String(formData.get("status") || before.status),
+      deadline: nullableDate(formData, "deadline"),
+      ownerRole: String(formData.get("ownerRole") || before.ownerRole || ""),
+      assignee: String(formData.get("assignee") || before.assignee || ""),
+      nextStep: String(formData.get("nextStep") || ""),
+      comment: String(formData.get("comment") || "")
+    }
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      eventId: updated.eventId,
+      entityType: "TASK",
+      entityId: updated.id,
+      userId: session.user.id,
+      action: "update_task",
+      before: before as any,
+      after: updated as any
+    }
+  });
+
+  revalidatePath(`/events/${updated.eventId}`);
+  revalidatePath("/workspace/deadlines");
+}
+
+export async function createDocumentWorkflow(formData: FormData) {
+  const session = await requireEditor();
+  const eventId = String(formData.get("eventId"));
+  const dealId = String(formData.get("dealId") || "");
+  const workflow = await prisma.documentWorkflow.create({
+    data: {
+      eventId,
+      dealId: dealId || null,
+      documentType: String(formData.get("documentType") || "contract"),
+      status: String(formData.get("status") || "NOT_STARTED"),
+      sentAt: nullableDate(formData, "sentAt"),
+      deadlineAt: nullableDate(formData, "deadlineAt"),
+      owner: String(formData.get("owner") || ""),
+      fileUrl: String(formData.get("fileUrl") || ""),
+      comment: String(formData.get("comment") || "")
+    }
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      eventId,
+      entityType: "DOCUMENT",
+      entityId: workflow.id,
+      userId: session.user.id,
+      action: "create_document_workflow",
+      after: workflow as any
+    }
+  });
+
+  revalidatePath(`/events/${eventId}`);
+  revalidatePath("/workspace/docs");
+}
+
+export async function createFileAttachment(formData: FormData) {
+  const session = await requireEditor();
+  const eventId = String(formData.get("eventId"));
+  const file = await prisma.fileAttachment.create({
+    data: {
+      eventId,
+      dealId: String(formData.get("dealId") || "") || null,
+      taskId: String(formData.get("taskId") || "") || null,
+      documentWorkflowId: String(formData.get("documentWorkflowId") || "") || null,
+      fileName: String(formData.get("fileName")),
+      fileUrl: String(formData.get("fileUrl")),
+      fileType: String(formData.get("fileType") || ""),
+      uploadedBy: session.user.email || session.user.name || ""
+    }
+  });
+
+  await prisma.activityLog.create({
+    data: {
+      eventId,
+      entityType: "EVENT",
+      entityId: eventId,
+      userId: session.user.id,
+      action: "attach_file",
+      after: file as any
+    }
+  });
+
+  revalidatePath(`/events/${eventId}`);
+}
+
+export async function createActivityComment(formData: FormData) {
+  const session = await requireEditor();
+  const eventId = String(formData.get("eventId"));
+  await prisma.activityLog.create({
+    data: {
+      eventId,
+      entityType: String(formData.get("entityType") || "EVENT"),
+      entityId: String(formData.get("entityId") || eventId),
+      userId: session.user.id,
+      action: "comment",
+      comment: String(formData.get("comment") || "")
+    }
+  });
+
+  revalidatePath(`/events/${eventId}`);
 }

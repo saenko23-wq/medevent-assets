@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { EditorOnly } from "@/components/editor-only";
 import { StatusBadge } from "@/components/status-badge";
 import { prisma } from "@/lib/prisma";
-import { createEventSlot, createOperationTask } from "@/lib/actions";
+import { createActivityComment, createDocumentWorkflow, createEventSlot, createFileAttachment, createOperationTask, updateOperationTask } from "@/lib/actions";
 import { dateUa, deadlineStateFor, deadlineStateLabels, eventStatusLabels, money, operationStatusLabels } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
@@ -18,6 +18,7 @@ const tabs = [
   ["documents", "Documents"],
   ["finance", "Finance"],
   ["reports", "Reports"],
+  ["files", "Files"],
   ["activity", "Activity"]
 ];
 
@@ -30,6 +31,9 @@ export default async function EventDetailPage({ params, searchParams }: { params
         slots: { include: { client: true, tasks: true }, orderBy: [{ rowNumber: "asc" }, { createdAt: "asc" }] },
         tasks: { orderBy: [{ deadline: "asc" }, { createdAt: "asc" }] },
         documents: { orderBy: { createdAt: "asc" } },
+        documentWorkflows: { include: { deal: { include: { client: true } } }, orderBy: [{ deadlineAt: "asc" }, { createdAt: "asc" }] },
+        fileAttachments: { orderBy: { createdAt: "desc" } },
+        activityLogs: { orderBy: { createdAt: "desc" }, take: 100 },
         deals: { include: { client: true, payments: true } }
       }
     }),
@@ -100,9 +104,10 @@ export default async function EventDetailPage({ params, searchParams }: { params
       {activeTab === "partners" ? <Partners event={event} slots={partnerSlots} clients={clients} ref={ref} /> : null}
       {activeTab === "program" ? <Program slots={event.slots} /> : null}
       {activeTab === "tasks" ? <Tasks event={event} /> : null}
-      {activeTab === "documents" ? <Documents event={event} /> : null}
+      {activeTab === "documents" ? <><Documents event={event} /><DocumentWorkflows event={event} /></> : null}
       {activeTab === "finance" ? <Finance event={event} /> : null}
       {activeTab === "reports" ? <Reports event={event} /> : null}
+      {activeTab === "files" ? <Files event={event} /> : null}
       {activeTab === "activity" ? <Activity event={event} /> : null}
     </AppShell>
   );
@@ -138,6 +143,38 @@ function Overview({ event, partnerSlots, medeventSlots }: any) {
         <External href={event.youtubeDay1Url} label="Трансляція День 1" />
         <External href={event.youtubeDay2Url} label="Трансляція День 2" />
       </div>
+      <div className="mt-6">
+        <DataTable
+          title="Document workflows"
+          headers={["Company", "Document", "Status", "Sent", "Deadline", "Owner", "File", "Comment"]}
+          rows={event.documentWorkflows.map((workflow: any) => [
+            workflow.deal?.client?.company ?? "Event",
+            workflow.documentType,
+            workflow.status,
+            workflow.sentAt ? dateUa(workflow.sentAt) : "вЂ”",
+            workflow.deadlineAt ? dateUa(workflow.deadlineAt) : "вЂ”",
+            workflow.owner ?? "вЂ”",
+            workflow.fileUrl ? "Attached" : "вЂ”",
+            workflow.comment ?? "вЂ”"
+          ])}
+        />
+      </div>
+      <EditorOnly>
+        <form action={createDocumentWorkflow} className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-5">
+          <input type="hidden" name="eventId" value={event.id} />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <select name="dealId"><option value="">Event-level document</option>{event.deals.map((deal: any) => <option key={deal.id} value={deal.id}>{deal.client.company} В· {deal.package}</option>)}</select>
+            <select name="documentType"><option value="contract">Contract</option><option value="invoice">Invoice</option><option value="act">Act</option><option value="appendix">Appendix</option><option value="doclink">DocLink</option></select>
+            <select name="status"><option value="NOT_STARTED">NOT_STARTED</option><option value="PREPARING">PREPARING</option><option value="SENT_TO_CLIENT">SENT_TO_CLIENT</option><option value="WAITING_CLIENT">WAITING_CLIENT</option><option value="SIGNED">SIGNED</option><option value="NOT_REQUIRED">NOT_REQUIRED</option><option value="ISSUE">ISSUE</option></select>
+            <input name="deadlineAt" type="date" />
+            <input name="sentAt" type="date" />
+            <input name="owner" placeholder="owner" />
+            <input name="fileUrl" placeholder="file_url" />
+            <textarea name="comment" rows={1} placeholder="comment" />
+          </div>
+          <button className="mt-3 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">Add document workflow</button>
+        </form>
+      </EditorOnly>
     </section>
   );
 }
@@ -223,6 +260,32 @@ function Tasks({ event }: any) {
             <button className="rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark">Додати задачу</button>
           </div>
         </form>
+        <div className="mt-4 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="mb-3 font-semibold text-slate-950">Inline task edit</h2>
+          <div className="space-y-3">
+            {event.tasks.slice(0, 12).map((task: any) => (
+              <details key={task.id} className="rounded-md border border-slate-100 p-3">
+                <summary className="cursor-pointer text-sm font-medium text-slate-900">{task.title}</summary>
+                <form action={updateOperationTask} className="mt-3 grid gap-2">
+                  <input type="hidden" name="id" value={task.id} />
+                  <input name="deadline" type="date" defaultValue={task.deadline ? new Date(task.deadline).toISOString().slice(0, 10) : ""} />
+                  <select name="status" defaultValue={task.status}>
+                    <option value="not_started">not_started</option>
+                    <option value="in_progress">in_progress</option>
+                    <option value="waiting_client">waiting_client</option>
+                    <option value="ready">ready</option>
+                    <option value="blocked">blocked</option>
+                  </select>
+                  <input name="ownerRole" defaultValue={task.ownerRole ?? ""} placeholder="owner_role" />
+                  <input name="assignee" defaultValue={task.assignee ?? ""} placeholder="owner_user" />
+                  <input name="nextStep" defaultValue={task.nextStep ?? ""} placeholder="next_step" />
+                  <textarea name="comment" defaultValue={task.comment ?? ""} rows={2} placeholder="comment" />
+                  <button className="rounded-md bg-brand px-3 py-2 text-sm font-semibold text-white">Save</button>
+                </form>
+              </details>
+            ))}
+          </div>
+        </div>
       </EditorOnly>
     </section>
   );
@@ -240,6 +303,43 @@ function Documents({ event }: any) {
           </a>
         ))}
       </div>
+    </section>
+  );
+}
+
+function DocumentWorkflows({ event }: any) {
+  return (
+    <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+      <DataTable
+        title="Document workflows"
+        headers={["Company", "Document", "Status", "Sent", "Deadline", "Owner", "File", "Comment"]}
+        rows={event.documentWorkflows.map((workflow: any) => [
+          workflow.deal?.client?.company ?? "Event",
+          workflow.documentType,
+          workflow.status,
+          workflow.sentAt ? dateUa(workflow.sentAt) : "вЂ”",
+          workflow.deadlineAt ? dateUa(workflow.deadlineAt) : "вЂ”",
+          workflow.owner ?? "вЂ”",
+          workflow.fileUrl ? "Attached" : "вЂ”",
+          workflow.comment ?? "вЂ”"
+        ])}
+      />
+      <EditorOnly>
+        <form action={createDocumentWorkflow} className="mt-6 rounded-lg border border-slate-200 bg-slate-50 p-5">
+          <input type="hidden" name="eventId" value={event.id} />
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <select name="dealId"><option value="">Event-level document</option>{event.deals.map((deal: any) => <option key={deal.id} value={deal.id}>{deal.client.company} В· {deal.package}</option>)}</select>
+            <select name="documentType"><option value="contract">Contract</option><option value="invoice">Invoice</option><option value="act">Act</option><option value="appendix">Appendix</option><option value="doclink">DocLink</option></select>
+            <select name="status"><option value="NOT_STARTED">NOT_STARTED</option><option value="PREPARING">PREPARING</option><option value="SENT_TO_CLIENT">SENT_TO_CLIENT</option><option value="WAITING_CLIENT">WAITING_CLIENT</option><option value="SIGNED">SIGNED</option><option value="NOT_REQUIRED">NOT_REQUIRED</option><option value="ISSUE">ISSUE</option></select>
+            <input name="deadlineAt" type="date" />
+            <input name="sentAt" type="date" />
+            <input name="owner" placeholder="owner" />
+            <input name="fileUrl" placeholder="file_url" />
+            <textarea name="comment" rows={1} placeholder="comment" />
+          </div>
+          <button className="mt-3 rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">Add document workflow</button>
+        </form>
+      </EditorOnly>
     </section>
   );
 }
@@ -273,10 +373,58 @@ function Reports({ event }: any) {
   );
 }
 
+function Files({ event }: any) {
+  return (
+    <section className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
+      <DataTable
+        title="Files"
+        headers={["File", "Type", "Uploaded by", "Created", "URL"]}
+        rows={event.fileAttachments.map((file: any) => [
+          file.fileName,
+          file.fileType || "file",
+          file.uploadedBy || "вЂ”",
+          dateUa(file.createdAt),
+          file.fileUrl
+        ])}
+      />
+      <EditorOnly>
+        <form action={createFileAttachment} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+          <input type="hidden" name="eventId" value={event.id} />
+          <div className="mb-4 flex items-center gap-2"><Plus className="text-brand" size={18} /><h2 className="font-semibold">Attach file</h2></div>
+          <div className="grid gap-3">
+            <input name="fileName" placeholder="file_name" required />
+            <input name="fileUrl" placeholder="file_url" required />
+            <input name="fileType" placeholder="file_type" />
+            <select name="dealId"><option value="">No deal</option>{event.deals.map((deal: any) => <option key={deal.id} value={deal.id}>{deal.client.company} В· {deal.package}</option>)}</select>
+            <select name="documentWorkflowId"><option value="">No document workflow</option>{event.documentWorkflows.map((workflow: any) => <option key={workflow.id} value={workflow.id}>{workflow.documentType} В· {workflow.status}</option>)}</select>
+            <button className="rounded-md bg-brand px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-dark">Attach</button>
+          </div>
+        </form>
+      </EditorOnly>
+    </section>
+  );
+}
+
 function Activity({ event }: any) {
   return (
     <section className="mt-6 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <h2 className="font-semibold text-slate-950">Activity / Comments</h2>
+      <EditorOnly>
+        <form action={createActivityComment} className="mt-4 grid gap-3 rounded-md border border-slate-200 bg-slate-50 p-4 md:grid-cols-[160px_1fr_auto]">
+          <input type="hidden" name="eventId" value={event.id} />
+          <select name="entityType"><option value="EVENT">EVENT</option><option value="PARTICIPATION">PARTICIPATION</option><option value="TASK">TASK</option><option value="DOCUMENT">DOCUMENT</option><option value="PAYMENT">PAYMENT</option><option value="REPORT">REPORT</option></select>
+          <input name="comment" placeholder="comment" required />
+          <button className="rounded-md bg-brand px-4 py-2 text-sm font-semibold text-white">Add</button>
+        </form>
+      </EditorOnly>
+      <div className="mt-4 space-y-3">
+        {event.activityLogs.map((log: any) => (
+          <div key={log.id} className="rounded-md border border-slate-100 p-3 text-sm">
+            <p className="font-medium text-slate-900">{log.entityType} В· {log.action} В· {dateUa(log.createdAt)}</p>
+            <p className="mt-1 text-slate-600">{log.comment || log.after?.title || log.after?.fileName || log.entityId}</p>
+          </div>
+        ))}
+      </div>
       <div className="mt-4 space-y-3">
         {event.slots.filter((slot: any) => slot.programComment || slot.managerComment).map((slot: any) => (
           <div key={slot.id} className="rounded-md border border-slate-100 p-3 text-sm">
